@@ -1,0 +1,13 @@
+{
+  "domain": "green_drake",
+  "name": "Green Drake Horizon UPS",
+  "codeowners": ["@mattmahn"],
+  "config_flow": true,
+  "dependencies": ["sensor"],
+  "documentation": "https://www.home-assistant.io/integrations/green_drake",
+  "homekit": {},
+  "iot_class": "local_polling",
+  "requirements": [],
+  "ssdp": [],
+  "zeroconf": []
+}
