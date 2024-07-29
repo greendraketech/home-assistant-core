@@ -9,10 +9,10 @@ import random
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT, Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import UpdateFailed
+from homeassistant.helpers import device_registry as dr
 
 from .api_client import ApiClient
-from .const import COORDINATOR, DATA, DOMAIN, UNIQUE_ID
+from .const import COORDINATOR, DOMAIN
 from .coordinator import HorizonDataUpdateCoordinator
 
 DEFAULT_SCAN_INTERVAL = 60
@@ -43,9 +43,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     host = config[CONF_HOST]
     port = config[CONF_PORT]
 
+    name = "Horizon resource status"
     coordinator = HorizonDataUpdateCoordinator(
         hass,
-        "Horizon resource status",
+        name,
         datetime.timedelta(seconds=DEFAULT_SCAN_INTERVAL),
         ApiClient(host, port, 10),
     )
@@ -54,13 +55,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     hass.data.setdefault(DOMAIN, {})
     # TODO 1. Create API instance
+    unique_device_id = str(f"{host}:{port}-{random.randint(0, 9999)}")
+    unique_id = f"{unique_device_id}"
     hass.data[DOMAIN][entry.entry_id] = {
         COORDINATOR: coordinator,
-        UNIQUE_ID: str(random.randint(1, 99999)),
+        # UNIQUE_ID: unique_id,
     }
     # TODO 2. Validate the API connection (and authentication)
     # TODO 3. Store an API object for your platforms to access
     # hass.data[DOMAIN][entry.entry_id] = MyApi(...)
+
+    device_registry = dr.async_get(hass)
+    device_registry.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, unique_id)},
+    )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 

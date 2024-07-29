@@ -24,10 +24,10 @@ class HorizonDataUpdateCoordinator(DataUpdateCoordinator):
     ) -> None:
         """Initialize global data updater."""
         super().__init__(hass, _LOGGER, name=name, update_interval=update_interval)
-        self._api_client = api_client
+        self.api_client = api_client
 
     async def _async_update_data(self) -> dict[str, Any]:
         return {
-            "battery.voltage": await self._api_client.get_battery_voltage(),
-            "ups.uptime": (await self._api_client.get_uptime()).total_seconds(),
+            "battery.voltage": await self.api_client.get_battery_voltage(),
+            "ups.uptime": (await self.api_client.get_uptime()).total_seconds(),
         }

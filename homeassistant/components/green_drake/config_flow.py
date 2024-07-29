@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 import logging
 from typing import Any
 
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
-from homeassistant.const import CONF_HOST, CONF_PORT
+from homeassistant.const import CONF_HOST, CONF_PORT, CONF_TIMEOUT
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 import homeassistant.helpers.config_validation as cv
@@ -23,6 +24,9 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_HOST): cv.string,
         vol.Required(CONF_PORT, default=80): cv.port,
+        vol.Required(
+            CONF_TIMEOUT, default=10, description="Timeout"
+        ): cv.positive_float,
     }
 )
 
@@ -40,7 +44,7 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
     #     your_validate_func, data[CONF_USERNAME], data[CONF_PASSWORD]
     # )
 
-    hub = ApiClient(data[CONF_HOST])
+    ApiClient(data[CONF_HOST], data[CONF_PORT], data[CONF_TIMEOUT])
 
     # If you cannot connect:
     # throw CannotConnect
@@ -58,7 +62,7 @@ class HorizonConfigFlow(ConfigFlow, domain=DOMAIN):
     MINOR_VERSION = 1
 
     async def async_setup_entry(
-        self, saved_input: dict[str, Any] | None = None
+        self, saved_input: Mapping[str, Any]
     ) -> ConfigFlowResult:
         """Load the saved configuration."""
         return self.async_create_entry(
@@ -96,7 +100,7 @@ class HorizonConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 def _get_entity_tile(host: str, port: int):
-    return f"{host}:{port}"
+    return f"Entity_Title: {host}:{port}"
 
 
 class CannotConnect(HomeAssistantError):
