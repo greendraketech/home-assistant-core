@@ -27,7 +27,9 @@ class HorizonDataUpdateCoordinator(DataUpdateCoordinator):
         self.api_client = api_client
 
     async def _async_update_data(self) -> dict[str, Any]:
+        _LOGGER.debug("asfkljjkldfsklsdfja")
+        data = await self.api_client.get_system_info()
         return {
-            "battery.voltage": await self.api_client.get_battery_voltage(),
-            "ups.uptime": (await self.api_client.get_uptime()).total_seconds(),
+            "battery.voltage": data.battery.voltage,
+            "ups.uptime": data.uptime.total_seconds(),
         }

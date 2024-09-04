@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import datetime
 import logging
-import random
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT, Platform
@@ -12,27 +11,12 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 
 from .api_client import ApiClient
-from .const import COORDINATOR, DOMAIN
+from .const import COORDINATOR, DOMAIN, UNIQUE_ID
 from .coordinator import HorizonDataUpdateCoordinator
 
 DEFAULT_SCAN_INTERVAL = 60
 PLATFORMS: list[Platform] = [Platform.SENSOR]
 _LOGGER = logging.getLogger(__name__)
-
-
-class HorizonData:
-    """Stores the data retrieved from a Horizon UPS."""
-
-    def __init__(self, host: str, port: int) -> None:
-        self._client = ApiClient(host, port, 10)
-
-    async def async_update(self):
-        batt_volt = await self._client.get_battery_voltage()
-        uptime = await self._client.get_uptime()
-        return {
-            "battery.voltage": batt_volt,
-            "ups.uptime": uptime,
-        }
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -44,26 +28,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     port = config[CONF_PORT]
 
     name = "Horizon resource status"
+    # TODO 1. Create API instance
+    api_client = ApiClient(host, port, 10)
     coordinator = HorizonDataUpdateCoordinator(
         hass,
         name,
         datetime.timedelta(seconds=DEFAULT_SCAN_INTERVAL),
-        ApiClient(host, port, 10),
+        api_client,
     )
+
+    # TODO 2. Validate the API connection (and authentication)
     _LOGGER.debug("getting first data refresh")
     await coordinator.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})
-    # TODO 1. Create API instance
-    unique_device_id = str(f"{host}:{port}-{random.randint(0, 9999)}")
+
+    unique_device_id = (await api_client.get_system_info()).unique_id
     unique_id = f"{unique_device_id}"
+    _LOGGER.debug("async_setup_entry: unique_id = %s", unique_id)
+    # TODO 3. Store an API object for your platforms to access
     hass.data[DOMAIN][entry.entry_id] = {
         COORDINATOR: coordinator,
-        # UNIQUE_ID: unique_id,
+        UNIQUE_ID: unique_id,
     }
-    # TODO 2. Validate the API connection (and authentication)
-    # TODO 3. Store an API object for your platforms to access
-    # hass.data[DOMAIN][entry.entry_id] = MyApi(...)
 
     device_registry = dr.async_get(hass)
     device_registry.async_get_or_create(

@@ -2,7 +2,6 @@
 
 from datetime import timedelta
 import logging
-import random
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -53,22 +52,25 @@ class HorizonSensor(CoordinatorEntity[HorizonDataUpdateCoordinator], SensorEntit
         self,
         coordinator: HorizonDataUpdateCoordinator,
         description: SensorEntityDescription,
+        unique_id: str | None,
     ) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
         self.entity_description = description
+        self._attr_unique_id = f"{unique_id}_{description.key}"
 
-    @property
-    def unique_id(self) -> str:
-        """Return a unique identifier for this sensor."""
-        _LOGGER.debug("Greetings, unique_id wanter")
-        a = self.coordinator.api_client
-        return f"{a.host}:{a.port}-{random.randint(1, 9999)}"
+    # @property
+    # def unique_id(self) -> str:
+    #     """Return a unique identifier for this sensor."""
+    #     _LOGGER.debug("Greetings, unique_id wanter")
+    #     sys_info = await self.coordinator.api_client.get_system_info()
+    #     return sys_info.unique_id
 
     @property
     def native_value(self) -> StateType:
         """Return entity data from UPS."""
         data = self.coordinator.data
+        _LOGGER.info("what data do coordinator have? %s", data)
         return data.get(self.entity_description.key)
 
 
@@ -78,15 +80,10 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up sensors from a config entry created in the UI."""
-    _LOGGER.debug(
-        "What in the heck is stored: %s", hass.data[DOMAIN][config_entry.entry_id]
-    )
-    coordinator = hass.data[DOMAIN][config_entry.entry_id][COORDINATOR]
-    # horizon_data = hass.data[DOMAIN][config_entry.entry_id][DATA]
+    entry = hass.data[DOMAIN][config_entry.entry_id]
+    _LOGGER.info("What in the heck is stored: %s", entry)
+    coordinator = entry[COORDINATOR]
     async_add_entities(
-        HorizonSensor(
-            coordinator,
-            entity_description,
-        )
+        HorizonSensor(coordinator, entity_description, config_entry.unique_id)
         for entity_description in SENSORS
     )
