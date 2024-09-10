@@ -1,6 +1,7 @@
 """Provides a sensor to track a UPS."""
 
-from datetime import timedelta
+from collections.abc import Callable
+from dataclasses import dataclass
 import logging
 
 from homeassistant.components.sensor import (
@@ -9,36 +10,82 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import EntityCategory, UnitOfElectricPotential, UnitOfTime
+from homeassistant.const import (
+    UnitOfElectricCurrent,
+    UnitOfElectricPotential,
+    UnitOfPower,
+    UnitOfTemperature,
+    UnitOfTime,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from . import COORDINATOR, DOMAIN
-from .coordinator import HorizonDataUpdateCoordinator
+from . import HorizonConfigEntry
+from .coordinator import HorizonData, HorizonDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-SCAN_INTERVAL = timedelta(minutes=1)
 
-SENSORS: list[SensorEntityDescription] = [
-    SensorEntityDescription(
+@dataclass(frozen=True, kw_only=True)
+class HorizonSensorEntityDescription(SensorEntityDescription):
+    """Describes Green Drake Horizaon sensory entity."""
+
+    value_fn: Callable[[HorizonData], StateType]
+
+
+SENSORS: list[HorizonSensorEntityDescription] = [
+    HorizonSensorEntityDescription(
+        device_class=SensorDeviceClass.CURRENT,
+        key="battery.charge_current",
+        native_unit_of_measurement=UnitOfElectricCurrent.MILLIAMPERE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: data.battery.charge_current,
+    ),
+    HorizonSensorEntityDescription(
+        device_class=SensorDeviceClass.CURRENT,
+        key="battery.discharge_current",
+        native_unit_of_measurement=UnitOfElectricCurrent.MILLIAMPERE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: data.battery.discharge_current,
+    ),
+    HorizonSensorEntityDescription(
         device_class=SensorDeviceClass.VOLTAGE,
-        entity_category=EntityCategory.DIAGNOSTIC,
         key="battery.voltage",
         native_unit_of_measurement=UnitOfElectricPotential.MILLIVOLT,
         state_class=SensorStateClass.MEASUREMENT,
-        name="battery voltage",
+        suggested_unit_of_measurement=UnitOfElectricPotential.VOLT,
+        value_fn=lambda data: data.battery.voltage,
     ),
-    SensorEntityDescription(
+    HorizonSensorEntityDescription(
+        device_class=SensorDeviceClass.CURRENT,
+        key="ups.current",
+        native_unit_of_measurement=UnitOfElectricCurrent.MILLIAMPERE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: data.current,
+    ),
+    HorizonSensorEntityDescription(
+        device_class=SensorDeviceClass.POWER,
+        key="ups.power",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: data.power.value / 1_000,
+    ),
+    HorizonSensorEntityDescription(
+        device_class=SensorDeviceClass.TEMPERATURE,
+        key="ups.temperature",
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: data.temperature.value / 1_000,
+    ),
+    HorizonSensorEntityDescription(
         device_class=SensorDeviceClass.DURATION,
-        entity_category=EntityCategory.DIAGNOSTIC,
         key="ups.uptime",
         native_unit_of_measurement=UnitOfTime.SECONDS,
         state_class=SensorStateClass.TOTAL_INCREASING,
-        name="UPS uptime",
+        suggested_unit_of_measurement=UnitOfTime.DAYS,
+        value_fn=lambda data: data.uptime.total_seconds(),
     ),
 ]
 
@@ -59,31 +106,23 @@ class HorizonSensor(CoordinatorEntity[HorizonDataUpdateCoordinator], SensorEntit
         self.entity_description = description
         self._attr_unique_id = f"{unique_id}_{description.key}"
 
-    # @property
-    # def unique_id(self) -> str:
-    #     """Return a unique identifier for this sensor."""
-    #     _LOGGER.debug("Greetings, unique_id wanter")
-    #     sys_info = await self.coordinator.api_client.get_system_info()
-    #     return sys_info.unique_id
-
     @property
     def native_value(self) -> StateType:
         """Return entity data from UPS."""
         data = self.coordinator.data
-        _LOGGER.info("what data do coordinator have? %s", data)
-        return data.get(self.entity_description.key)
+        _LOGGER.debug("what data do coordinator have? %s", data)
+        return self.entity_description.value_fn(data)
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    config_entry: ConfigEntry,
+    entry: HorizonConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up sensors from a config entry created in the UI."""
-    entry = hass.data[DOMAIN][config_entry.entry_id]
-    _LOGGER.info("What in the heck is stored: %s", entry)
-    coordinator = entry[COORDINATOR]
+    _LOGGER.debug("What in the heck is stored: %s", entry)
+    coordinator = entry.runtime_data
     async_add_entities(
-        HorizonSensor(coordinator, entity_description, config_entry.unique_id)
+        HorizonSensor(coordinator, entity_description, entry.unique_id)
         for entity_description in SENSORS
     )

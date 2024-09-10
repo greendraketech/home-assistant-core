@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 import logging
 from typing import Any
 
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
-from homeassistant.const import CONF_HOST, CONF_PORT, CONF_TIMEOUT
+from homeassistant.const import CONF_TIMEOUT, CONF_URL
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 import homeassistant.helpers.config_validation as cv
+import homeassistant.helpers.httpx_client
 
 from .api_client import ApiClient
 from .const import DOMAIN
@@ -22,10 +22,9 @@ _LOGGER = logging.getLogger(__name__)
 
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
-        vol.Required(CONF_HOST): cv.string,
-        vol.Required(CONF_PORT, default=80): cv.port,
+        vol.Required(CONF_URL, msg="Device URL", description="Device URL"): str,
         vol.Required(
-            CONF_TIMEOUT, default=10, description="Timeout"
+            CONF_TIMEOUT, default=10, msg="MsgTimeout", description="Timeout"
         ): cv.positive_float,
     }
 )
@@ -36,15 +35,12 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
 
     Data has the keys from STEP_USER_DATA_SCHEMA with values provided by the user.
     """
-    # TODO validate the data can be used to set up a connection.
-
-    # If your PyPI package is not built with async, pass your methods
-    # to the executor:
-    # await hass.async_add_executor_job(
-    #     your_validate_func, data[CONF_USERNAME], data[CONF_PASSWORD]
-    # )
-
-    ApiClient(data[CONF_HOST], data[CONF_PORT], data[CONF_TIMEOUT])
+    # validate the data can be used to set up a connection.
+    ApiClient(
+        data[CONF_URL],
+        data[CONF_TIMEOUT],
+        httpx_client=homeassistant.helpers.httpx_client.get_async_client(hass),
+    )
 
     # If you cannot connect:
     # throw CannotConnect
@@ -61,14 +57,14 @@ class HorizonConfigFlow(ConfigFlow, domain=DOMAIN):
     VERSION = 0
     MINOR_VERSION = 1
 
-    async def async_setup_entry(
-        self, saved_input: Mapping[str, Any]
-    ) -> ConfigFlowResult:
-        """Load the saved configuration."""
-        return self.async_create_entry(
-            title=_get_entity_tile(saved_input[CONF_HOST], saved_input[CONF_PORT]),
-            data=saved_input,
-        )
+    # async def async_setup_entry(
+    #     self, saved_input: Mapping[str, Any]
+    # ) -> ConfigFlowResult:
+    #     """Load the saved configuration."""
+    #     return self.async_create_entry(
+    #         title=_get_entity_tile(saved_input[CONF_HOST], saved_input[CONF_PORT]),
+    #         data=saved_input,
+    #     )
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -86,21 +82,25 @@ class HorizonConfigFlow(ConfigFlow, domain=DOMAIN):
                 _LOGGER.exception("Unexpected exception")
                 errors["base"] = "unknown"
             else:
-                return self.async_create_entry(
-                    title=_get_entity_tile(
-                        validated_input[CONF_HOST], validated_input[CONF_PORT]
+                api_client = ApiClient(
+                    validated_input[CONF_URL],
+                    20,
+                    httpx_client=homeassistant.helpers.httpx_client.get_async_client(
+                        self.hass
                     ),
+                )
+                unique_id = (await api_client.get_system_info()).unique_id
+                await self.async_set_unique_id(unique_id)
+                return self.async_create_entry(
+                    title=validated_input[CONF_URL],
                     data=validated_input,
                 )
 
         return self.async_show_form(
             step_id="user",
             data_schema=STEP_USER_DATA_SCHEMA,
+            errors=errors,
         )
-
-
-def _get_entity_tile(host: str, port: int):
-    return f"Entity_Title: {host}:{port}"
 
 
 class CannotConnect(HomeAssistantError):

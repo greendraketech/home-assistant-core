@@ -242,6 +242,7 @@ FLOWS = {
         "gpsd",
         "gpslogger",
         "gree",
+        "green_drake",
         "growatt_server",
         "guardian",
         "habitica",
