@@ -1,3 +1,5 @@
+"""HTTP API client for Green Drake Horizon UPS."""
+
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import timedelta
@@ -24,14 +26,18 @@ class Threshold[T]:
     """The threshold at which some action must be taken."""
 
     def in_error(self) -> bool:
+        """Determine if this threshold has reached the "error" severity."""
         return bool(self.comparator(self.value, self.error))
 
     def in_warning(self) -> bool:
+        """Determine if this threshold has reached the "warning" severity."""
         return bool(self.comparator(self.value, self.warning))
 
 
 @dataclass
-class RelativeThreshold[T]:
+class RelativeThreshold[T: (int, float)]:
+    """Represents a relative threshold of some value."""
+
     max: T
     """The maximum value `value` can be."""
     relative_error: int = field(metadata={"unit": "per cent mille"})
@@ -42,11 +48,13 @@ class RelativeThreshold[T]:
     """The real value."""
 
     @property
-    def error(self) -> T:
+    def error(self) -> float:
+        """Calculate the absolute error value based on the relative setting."""
         return self.max * (self.relative_error / 100_000)
 
     @property
-    def warning(self) -> T:
+    def warning(self) -> float:
+        """Calculate the absolute warning value based on the relative setting."""
         return self.max * (self.relative_warning / 100_000)
 
     def in_error(self) -> bool:
@@ -57,6 +65,7 @@ class RelativeThreshold[T]:
         return self.value >= self.error
 
     def in_warning(self) -> bool:
+        """Determine if the value has entered the "warning" region."""
         return self.value >= self.warning
 
 
@@ -71,11 +80,15 @@ class Range[T]:
 
 @dataclass
 class PowerInput:
+    """Data model for attached mains power source."""
+
     voltage: int = field(metadata={"unit": "millivolt"})
 
 
 @dataclass
 class Battery:
+    """Data model for an attached battery."""
+
     charge_current: int = field(metadata={"unit": "milliamp"})
     charge_max: int = field(metadata={"unit": "per cent mille"})
     charge_min: int = field(metadata={"unit": "per cent mille"})
@@ -86,8 +99,11 @@ class Battery:
 
 @dataclass
 class SystemInfo:
+    """Data model for overall system information."""
+
     battery: Battery
     current: int
+    energy_consumption: float = field(metadata={"unit": "killowatt-hour"})
     firmware_version: str
     inputs: list[PowerInput]
     """The live/"mains" power inputs."""
@@ -101,6 +117,8 @@ class SystemInfo:
 
 @dataclass
 class OutputPowerStage:
+    """Data model for output power stages."""
+
     # current: Range[int] = field(metadata={"unit": "milliamp"})
     # power: Range[int] = field(metadata={"unit": "milliwatt"})
     temperature: Threshold[int] = field(metadata={"unit": "milli degree Celsius"})
@@ -109,6 +127,8 @@ class OutputPowerStage:
 
 @dataclass
 class CleanShutdown:
+    """Data model for clean shutdown GPIO."""
+
     channel: int
     pulse_delay: int = field(metadata={"unit": "millisecond"})
     pulse_width: int = field(metadata={"unit": "millisecond"})
@@ -116,6 +136,8 @@ class CleanShutdown:
 
 @dataclass
 class OutputPort:
+    """Data model for output ports."""
+
     clean_shutdown: CleanShutdown
     enabled: bool
     label: str
@@ -124,6 +146,8 @@ class OutputPort:
 
 
 class OutputCardStatus(StrEnum):
+    """Statuses of output cards."""
+
     INIT = "Init!"
     OK = "OK!"
     UNKOWN_CARD = "No ID Match!"
@@ -177,6 +201,7 @@ class ApiClient:
         data = resp.json()
         _LOGGER.debug("API response body = %s", data)
         battery = data["Bat"]
+        energy = data["E"]
         device = data["Dev"]
         uptime = data["up_time"]
         return SystemInfo(
@@ -189,6 +214,7 @@ class ApiClient:
                 voltage=battery["V"],
             ),
             current=data["C"],
+            energy_consumption=(energy["kWh"] + (energy["Wh"] / 1000)),
             inputs=[
                 PowerInput(data["V1"]),
                 PowerInput(data["V2"]),
@@ -204,10 +230,10 @@ class ApiClient:
             temperature=Threshold(
                 comparator=operator.ge,
                 error=data["TE"],  # codespell:ignore TE
-                value=data["T"],
-                warning=data["TW"],
+                value=data["T"],  # codespell:ignore TE
+                warning=data["TW"],  # codespell:ignore TE
             ),
-            unique_id=device["UUID"] or device["Id"],
+            unique_id=device["Id"],
             uptime=timedelta(days=uptime["days"], seconds=uptime["seconds"]),
         )
 
@@ -220,9 +246,9 @@ class ApiClient:
             OutputPowerStage(
                 temperature=Threshold(
                     comparator=operator.ge,
-                    error=value["TE"],
+                    error=value["TE"],  # codespell:ignore TE
                     value=3,  # TODO
-                    warning=value["TW"],
+                    warning=value["TW"],  # codespell:ignore TE
                 ),
                 voltage=Range(
                     min=value["VMin"],
@@ -230,7 +256,7 @@ class ApiClient:
                     max=value["VMax"],
                 ),
             )
-            for key, value in data["Pwr"].items()
+            for value in data["Pwr"]
         ]
         return OutputCardInfo(
             label=data["label"],

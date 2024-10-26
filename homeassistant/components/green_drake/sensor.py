@@ -2,6 +2,7 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import partial
 import logging
 
 from homeassistant.components.sensor import (
@@ -13,6 +14,7 @@ from homeassistant.components.sensor import (
 from homeassistant.const import (
     UnitOfElectricCurrent,
     UnitOfElectricPotential,
+    UnitOfEnergy,
     UnitOfPower,
     UnitOfTemperature,
     UnitOfTime,
@@ -66,6 +68,13 @@ SENSORS: list[HorizonSensorEntityDescription] = [
         value_fn=lambda data: data.current,
     ),
     HorizonSensorEntityDescription(
+        device_class=SensorDeviceClass.ENERGY,
+        key="ups.energy consumption",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        value_fn=lambda data: data.energy_consumption,
+    ),
+    HorizonSensorEntityDescription(
         device_class=SensorDeviceClass.POWER,
         key="ups.power",
         native_unit_of_measurement=UnitOfPower.WATT,
@@ -93,12 +102,12 @@ SENSORS: list[HorizonSensorEntityDescription] = [
 class HorizonSensor(CoordinatorEntity[HorizonDataUpdateCoordinator], SensorEntity):
     """A Horizon sensor."""
 
-    entity_description: SensorEntityDescription
+    entity_description: HorizonSensorEntityDescription
 
     def __init__(
         self,
         coordinator: HorizonDataUpdateCoordinator,
-        description: SensorEntityDescription,
+        description: HorizonSensorEntityDescription,
         unique_id: str | None,
     ) -> None:
         """Initialize the sensor."""
@@ -111,6 +120,11 @@ class HorizonSensor(CoordinatorEntity[HorizonDataUpdateCoordinator], SensorEntit
         """Return entity data from UPS."""
         data = self.coordinator.data
         _LOGGER.debug("what data do coordinator have? %s", data)
+        _LOGGER.debug(
+            "what the value_fn? %s -> %s",
+            self.entity_description.value_fn,
+            self.entity_description.value_fn(data),
+        )
         return self.entity_description.value_fn(data)
 
 
@@ -122,7 +136,53 @@ async def async_setup_entry(
     """Set up sensors from a config entry created in the UI."""
     _LOGGER.debug("What in the heck is stored: %s", entry)
     coordinator = entry.runtime_data
-    async_add_entities(
+    sys_entities = [
         HorizonSensor(coordinator, entity_description, entry.unique_id)
         for entity_description in SENSORS
-    )
+    ]
+    # TODO do an async_add_entities per: system->card->powerstage->port
+    extra_entities: list[HorizonSensor] = []
+    for card_idx in range(4):
+        for power_stage_idx in range(1):
+            extra_entities.append(
+                HorizonSensor(
+                    coordinator,
+                    HorizonSensorEntityDescription(
+                        device_class=SensorDeviceClass.TEMPERATURE,
+                        key=f"card[{card_idx}].power_stage[{power_stage_idx}].temperature",
+                        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+                        state_class=SensorStateClass.MEASUREMENT,
+                        value_fn=partial(
+                            lambda data, card, ps: data.cards[f"Card {card}"]
+                            .power_stages[ps]
+                            .temperature.value,
+                            card=card_idx,
+                            ps=power_stage_idx,
+                        ),
+                    ),
+                    entry.unique_id,
+                )
+            )
+            extra_entities.append(
+                HorizonSensor(
+                    coordinator,
+                    HorizonSensorEntityDescription(
+                        device_class=SensorDeviceClass.VOLTAGE,
+                        key=f"card[{card_idx}].power_stage[{power_stage_idx}].voltage",
+                        native_unit_of_measurement=UnitOfElectricPotential.MILLIVOLT,
+                        state_class=SensorStateClass.MEASUREMENT,
+                        value_fn=partial(
+                            lambda data, card, ps: data.cards[f"Card {card}"]
+                            .power_stages[ps]
+                            .voltage.value,
+                            card=card_idx,
+                            ps=power_stage_idx,
+                        ),
+                    ),
+                    entry.unique_id,
+                )
+            )
+            for _port in range(2):
+                pass
+
+    async_add_entities(sys_entities + extra_entities)

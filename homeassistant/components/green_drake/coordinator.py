@@ -1,5 +1,6 @@
 """DataUpdateCoordinator for the Green Drake Horizon integration."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import timedelta
 import logging
@@ -7,7 +8,7 @@ import logging
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .api_client import ApiClient, Battery, PowerInput, Threshold
+from .api_client import ApiClient, Battery, OutputCardInfo, PowerInput, Threshold
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -17,7 +18,8 @@ class HorizonData:
     """Class for Horizon data."""
 
     battery: Battery
-    # cards: Mapping[str, OutputCardInfo]
+    cards: Mapping[str, OutputCardInfo]
+    energy_consumption: float
     current: int
     power: Threshold[int]
     power_inputs: list[PowerInput]
@@ -48,8 +50,16 @@ class HorizonDataUpdateCoordinator(DataUpdateCoordinator[HorizonData]):
         _LOGGER.debug("HorizonDataUpdateCoordinator._async_update_data")
         data = await self.api_client.get_system_info()
         _LOGGER.debug("data = %s", data)
+
+        # TODO properly handle dynamic card population
+        cards = [await self.api_client.get_card_info(i) for i in range(4)]
+        _LOGGER.debug("cards = %s", {cards})
+        card_map = {card.label: card for card in cards}
+        _LOGGER.debug("card_map = %s", {card_map})
         return HorizonData(
             battery=data.battery,
+            cards=card_map,
+            energy_consumption=data.energy_consumption,
             current=data.current,
             power=data.power,
             power_inputs=data.inputs,
