@@ -119,8 +119,8 @@ class SystemInfo:
 class OutputPowerStage:
     """Data model for output power stages."""
 
-    # current: Range[int] = field(metadata={"unit": "milliamp"})
-    # power: Range[int] = field(metadata={"unit": "milliwatt"})
+    current: Range[int] = field(metadata={"unit": "milliamp"})
+    power: RelativeThreshold[int] = field(metadata={"unit": "milliwatt"})
     temperature: Threshold[int] = field(metadata={"unit": "milli degree Celsius"})
     voltage: Range[int] = field(metadata={"unit": "millivolt"})
 
@@ -237,27 +237,41 @@ class ApiClient:
             uptime=timedelta(days=uptime["days"], seconds=uptime["seconds"]),
         )
 
-    async def get_card_info(self, card_num: int) -> OutputCardInfo:
+    async def get_card_info(self, card_num: int) -> OutputCardInfo | None:
         """Fetch information about card `card_num`."""
         resp = await self._http_client.get(f"/api/card/{card_num}")
         data = resp.json()
-        _LOGGER.debug("Card info response = %s", data)
-        power_stages = [
-            OutputPowerStage(
+        _LOGGER.debug("Card %d info response = %s", card_num, data)
+        if data["type"] == "empty":  # there is no card installed
+            _LOGGER.debug(
+                "There is no card installed in slot %d; returning none", card_num
+            )
+            return None
+
+        power_stages: list[OutputPowerStage] = []
+        for value in data["Pwr"]:
+            power_stage = OutputPowerStage(
+                current=Range(min=0, value=value["C"], max=value["CMax"]),
+                power=RelativeThreshold(
+                    max=value["PMax"],
+                    relative_error=value["PEPct"],
+                    relative_warning=value["PWPct"],
+                    value=value["P"],
+                ),
                 temperature=Threshold(
                     comparator=operator.ge,
                     error=value["TE"],  # codespell:ignore TE
-                    value=3,  # TODO
+                    value=value["T"],
                     warning=value["TW"],  # codespell:ignore TE
                 ),
                 voltage=Range(
                     min=value["VMin"],
-                    value=7,  # TODO
+                    value=value["V"],
                     max=value["VMax"],
                 ),
             )
-            for value in data["Pwr"]
-        ]
+            power_stages.append(power_stage)
+
         return OutputCardInfo(
             label=data["label"],
             model="TODO",  # TODO

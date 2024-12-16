@@ -54,8 +54,13 @@ class HorizonDataUpdateCoordinator(DataUpdateCoordinator[HorizonData]):
         # TODO properly handle dynamic card population
         cards = [await self.api_client.get_card_info(i) for i in range(4)]
         _LOGGER.debug("cards = %s", cards)
-        card_map = {card.label: card for card in cards}
+        card_map: dict[str, OutputCardInfo] = {}
+        for card in cards:
+            if card is None:
+                continue
+            card_map[card.label] = card
         _LOGGER.debug("card_map = %s", card_map)
+
         return HorizonData(
             battery=data.battery,
             cards=card_map,
